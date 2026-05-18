@@ -5,8 +5,6 @@ import pandas as pd
 import joblib
 from flask import Flask, render_template, request, jsonify, send_file
 
-# FIX: import BackpropNetwork dari module terpisah
-# agar joblib.load bisa menemukan class saat dijalankan via Gunicorn
 from backprop_model_class import BackpropNetwork
 
 # ============================================================
@@ -38,9 +36,9 @@ def load_models():
         else:
             models["kmeans_label_map"] = {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"}
 
-        from tensorflow.keras.models import load_model
-        models["ann"]    = load_model(os.path.join(MODEL_DIR, "ann_model.keras"))
-        models["lstm"]   = load_model(os.path.join(MODEL_DIR, "lstm_model.keras"))
+        import keras
+        models["ann"]    = keras.models.load_model(os.path.join(MODEL_DIR, "ann_model.keras"))
+        models["lstm"]   = keras.models.load_model(os.path.join(MODEL_DIR, "lstm_model.keras"))
         models["window"] = joblib.load(os.path.join(MODEL_DIR, "lstm_window_size.pkl"))
 
         metrics["linear"]   = joblib.load(os.path.join(MODEL_DIR, "metrics_linear_regression.pkl"))
