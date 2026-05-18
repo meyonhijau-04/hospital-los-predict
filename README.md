@@ -1,6 +1,6 @@
 # HospitalLOS — Prediksi Lama Tinggal Pasien Rumah Sakit
 
-> **UTS Praktikum Kecerdasan Buatan** · Semester 4 (Genap) · Tahun Akademik 2025/2026  
+> **UTS Praktikum Kecerdasan Buatan** · Semester 4 (Genap) 
 > Program Studi Teknik Informatika · Fakultas Teknologi Informasi
 
 ---
