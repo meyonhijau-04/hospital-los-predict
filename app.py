@@ -206,7 +206,6 @@ def api_predict():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/api/predict-csv", methods=["POST"])
 def api_predict_csv():
     try:
@@ -214,7 +213,8 @@ def api_predict_csv():
         if not file:
             return jsonify({"status": "error", "message": "File tidak ditemukan"}), 400
 
-        df = pd.read_csv(file)
+        df_original = pd.read_csv(file)
+        df = df_original.copy()
 
         enc    = MODELS.get("enc", {})
         feat   = MODELS.get("feats", [])
@@ -228,47 +228,52 @@ def api_predict_csv():
         df["gender"] = df["gender"].astype(str).map(gender_map).fillna(0)
         df["facid"]  = df["facid"].astype(str).map(facid_map).fillna(0)
 
-        # FIX: clip glucose negatif di CSV juga
         if "glucose" in df.columns:
             df["glucose"] = df["glucose"].clip(lower=0)
 
         drop_cols = [c for c in ["eid","vdate","discharged","lengthofstay"] if c in df.columns]
-        df = df.drop(columns=drop_cols)
+        df_model  = df.drop(columns=drop_cols)
 
         if feat:
-            for mc in [f for f in feat if f not in df.columns]:
-                df[mc] = 0
-            df = df[feat]
+            for mc in [f for f in feat if f not in df_model.columns]:
+                df_model[mc] = 0
+            df_model = df_model[feat]
 
-        X = scaler.transform(df) if scaler else df.values
+            df_model = df_model.fillna(0)
 
+        X = scaler.transform(df_model) if scaler else df_model.values
+
+        # FIX: untuk CSV pakai Linear Regression atau Backprop
+        # LSTM terlalu lambat di CPU Railway untuk batch prediction
         preds = []
-        if "lstm" in MODELS:
-            window = MODELS.get("window", 10)
-            for row in X:
-                X_seq = np.tile(row, (window, 1))[np.newaxis, :, :]
-                p = float(MODELS["lstm"].predict(X_seq, verbose=0)[0][0])
-                preds.append(max(1, round(p)))
-        elif "linear" in MODELS:
-            preds = [max(1, round(float(p))) for p in MODELS["linear"].predict(X)]
+        if "linear" in MODELS:
+            raw   = MODELS["linear"].predict(X)
+            preds = [max(1, min(17, round(float(p)))) for p in raw]
+        elif "backprop" in MODELS:
+            raw   = MODELS["backprop"].predict(X)
+            preds = [max(1, min(17, round(float(p)))) for p in raw]
 
-        df["prediksi_hari"] = preds
-        df["kategori"]      = df["prediksi_hari"].apply(lambda d: get_category(d)["label"])
+        df_original["prediksi_hari"] = preds
+        df_original["kategori"]      = df_original["prediksi_hari"].apply(
+            lambda d: get_category(d)["label"]
+        )
+        df_original["model_digunakan"] = "Linear Regression"
 
         output = io.StringIO()
-        df.to_csv(output, index=False)
+        df_original.to_csv(output, index=False)
         output.seek(0)
 
         return send_file(
-            io.BytesIO(output.getvalue().encode()),
+            io.BytesIO(output.getvalue().encode("utf-8")),
             mimetype="text/csv",
             as_attachment=True,
             download_name="hasil_prediksi.csv"
         )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route("/api/sample")
 def api_sample():
