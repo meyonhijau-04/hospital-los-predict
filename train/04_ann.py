@@ -62,7 +62,7 @@ model = Sequential([
     Dense(32,  activation="relu"),
     Dense(1)
 ])
-model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+model.compile(optimizer="adam", loss="mean_squared_error", metrics=["mean_absolute_error"])
 model.summary()
 print()
 
@@ -116,7 +116,7 @@ metrics = {"MAE": mae, "RMSE": rmse, "R2": r2}
 joblib.dump(metrics, f"{MODEL_PATH}/metrics_ann.pkl")
 print("      Metrik tersimpan : models/metrics_ann.pkl")
 
-model.save(f"{MODEL_PATH}/ann_model.keras")
+model.save(f"{MODEL_PATH}/ann_model.h5")
 print("      Model tersimpan  : models/ann_model.keras")
 
 joblib.dump(history.history, f"{MODEL_PATH}/ann_history.pkl")

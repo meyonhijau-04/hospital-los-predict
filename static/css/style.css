@@ -24,12 +24,13 @@
 }
 
 [data-bs-theme="dark"] {
-  --gray-50:  #0F172A;
-  --gray-100: #1E293B;
-  --gray-200: #334155;
-  --gray-400: #64748B;
-  --gray-600: #94A3B8;
-  --gray-800: #F1F5F9;
+  --gray-50:      #0F172A;
+  --gray-100:     #1E293B;
+  --gray-200:     #334155;
+  --gray-400:     #64748B;
+  --gray-600:     #94A3B8;
+  --gray-800:     #F1F5F9;
+  --primary-light:#242424;  /* ← INI YANG DITAMBAHKAN */
 }
 
 *, *::before, *::after { box-sizing: border-box; }
