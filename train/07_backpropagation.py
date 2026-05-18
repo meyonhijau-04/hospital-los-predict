@@ -2,7 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import joblib
 import os
+import sys
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# FIX: import BackpropNetwork dari module terpisah
+# agar pkl tersimpan dengan referensi backprop_model_class.BackpropNetwork
+# bukan __main__.BackpropNetwork yang tidak bisa diload oleh Gunicorn
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from backprop_model_class import BackpropNetwork
 
 # ============================================================
 # KONFIGURASI
@@ -21,66 +28,8 @@ plt.rcParams["font.family"]       = "sans-serif"
 plt.rcParams["axes.spines.top"]   = False
 plt.rcParams["axes.spines.right"] = False
 
-# ============================================================
-# FUNGSI AKTIVASI
-# ============================================================
-def relu(x):
-    return np.maximum(0, x)
-
-def relu_deriv(x):
-    return (x > 0).astype(float)
-
 def mse_loss(y_true, y_pred):
     return np.mean((y_true - y_pred) ** 2)
-
-# ============================================================
-# KELAS NEURAL NETWORK MANUAL
-# ============================================================
-class BackpropNetwork:
-    def __init__(self, n_input, n_h1, n_h2, lr=0.01):
-        self.lr = lr
-        np.random.seed(42)
-        self.W1 = np.random.randn(n_input, n_h1) * np.sqrt(2.0 / n_input)
-        self.b1 = np.zeros((1, n_h1))
-        self.W2 = np.random.randn(n_h1,   n_h2) * np.sqrt(2.0 / n_h1)
-        self.b2 = np.zeros((1, n_h2))
-        self.W3 = np.random.randn(n_h2,   1)    * np.sqrt(2.0 / n_h2)
-        self.b3 = np.zeros((1, 1))
-
-    def forward(self, X):
-        self.Z1 = X  @ self.W1 + self.b1
-        self.A1 = relu(self.Z1)
-        self.Z2 = self.A1 @ self.W2 + self.b2
-        self.A2 = relu(self.Z2)
-        self.Z3 = self.A2 @ self.W3 + self.b3
-        return self.Z3
-
-    def backward(self, X, y_true, y_pred):
-        n  = len(y_true)
-        dL = 2 * (y_pred - y_true.reshape(-1, 1)) / n
-
-        dW3 = self.A2.T @ dL
-        db3 = np.sum(dL, axis=0, keepdims=True)
-
-        dA2 = dL @ self.W3.T
-        dZ2 = dA2 * relu_deriv(self.Z2)
-        dW2 = self.A1.T @ dZ2
-        db2 = np.sum(dZ2, axis=0, keepdims=True)
-
-        dA1 = dZ2 @ self.W2.T
-        dZ1 = dA1 * relu_deriv(self.Z1)
-        dW1 = X.T  @ dZ1
-        db1 = np.sum(dZ1, axis=0, keepdims=True)
-
-        self.W3 -= self.lr * dW3
-        self.b3 -= self.lr * db3
-        self.W2 -= self.lr * dW2
-        self.b2 -= self.lr * db2
-        self.W1 -= self.lr * dW1
-        self.b1 -= self.lr * db1
-
-    def predict(self, X):
-        return self.forward(X).flatten()
 
 # ============================================================
 # MULAI
@@ -125,17 +74,17 @@ model = BackpropNetwork(n_features, HIDDEN1, HIDDEN2, lr=LR)
 # TRAINING
 # ============================================================
 print("[3/5] Melatih model Backpropagation...")
-train_losses = []
-val_losses   = []
+train_losses  = []
+val_losses    = []
 best_val_loss = np.inf
 patience      = 15
 no_improve    = 0
 best_weights  = None
 
 for epoch in range(1, EPOCHS + 1):
-    idx     = np.random.permutation(len(X_train))
-    X_shuf  = X_train[idx]
-    y_shuf  = y_train[idx]
+    idx    = np.random.permutation(len(X_train))
+    X_shuf = X_train[idx]
+    y_shuf = y_train[idx]
 
     for i in range(0, len(X_shuf), BATCH_SIZE):
         Xb = X_shuf[i:i+BATCH_SIZE]
@@ -210,7 +159,6 @@ print()
 # ============================================================
 print("[5/5] Membuat grafik perbandingan semua model...")
 
-# Loss curve Backprop
 print("      Grafik 1/3: Loss curve Backpropagation...")
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(train_losses, color="#2563EB", linewidth=1.5, label="Train Loss")
@@ -228,7 +176,6 @@ plt.savefig(f"{IMG_PATH}/backprop_loss_curve.png", dpi=150, bbox_inches="tight")
 plt.close()
 print("      Tersimpan: backprop_loss_curve.png")
 
-# Load semua metrik
 print("      Grafik 2/3: Perbandingan RMSE semua model...")
 m_lr  = joblib.load(f"{MODEL_PATH}/metrics_linear_regression.pkl")
 m_ann = joblib.load(f"{MODEL_PATH}/metrics_ann.pkl")

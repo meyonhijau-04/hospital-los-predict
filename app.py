@@ -1,10 +1,13 @@
 import os
 import io
-import json
 import numpy as np
 import pandas as pd
 import joblib
 from flask import Flask, render_template, request, jsonify, send_file
+
+# FIX: import BackpropNetwork dari module terpisah
+# agar joblib.load bisa menemukan class saat dijalankan via Gunicorn
+from backprop_model_class import BackpropNetwork
 
 # ============================================================
 # INISIALISASI
@@ -13,34 +16,6 @@ app = Flask(__name__)
 
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 MODEL_DIR = os.path.join(BASE_DIR, "models")
-
-# ============================================================
-# BACKPROP NETWORK CLASS (wajib ada agar pkl bisa diload)
-# ============================================================
-class BackpropNetwork:
-    def __init__(self, n_input, n_h1, n_h2, lr=0.01):
-        self.lr = lr
-        np.random.seed(42)
-        self.W1 = np.random.randn(n_input, n_h1) * np.sqrt(2.0 / n_input)
-        self.b1 = np.zeros((1, n_h1))
-        self.W2 = np.random.randn(n_h1,   n_h2) * np.sqrt(2.0 / n_h1)
-        self.b2 = np.zeros((1, n_h2))
-        self.W3 = np.random.randn(n_h2,   1)    * np.sqrt(2.0 / n_h2)
-        self.b3 = np.zeros((1, 1))
-
-    def forward(self, X):
-        self.Z1 = X  @ self.W1 + self.b1
-        self.A1 = np.maximum(0, self.Z1)
-        self.Z2 = self.A1 @ self.W2 + self.b2
-        self.A2 = np.maximum(0, self.Z2)
-        self.Z3 = self.A2 @ self.W3 + self.b3
-        return self.Z3
-
-    def backward(self, X, y_true, y_pred):
-        pass
-
-    def predict(self, X):
-        return self.forward(X).flatten()
 
 # ============================================================
 # LOAD SEMUA MODEL & ARTEFAK
@@ -55,6 +30,13 @@ def load_models():
         models["feats"]    = joblib.load(os.path.join(MODEL_DIR, "feature_names.pkl"))
         models["kmeans"]   = joblib.load(os.path.join(MODEL_DIR, "kmeans_model.pkl"))
         models["backprop"] = joblib.load(os.path.join(MODEL_DIR, "backprop_model.pkl"))
+
+        # FIX: load cluster label map yang diurutkan berdasarkan LOS aktual
+        kmeans_label_path = os.path.join(MODEL_DIR, "kmeans_cluster_label_map.pkl")
+        if os.path.exists(kmeans_label_path):
+            models["kmeans_label_map"] = joblib.load(kmeans_label_path)
+        else:
+            models["kmeans_label_map"] = {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"}
 
         from tensorflow.keras.models import load_model
         models["ann"]    = load_model(os.path.join(MODEL_DIR, "ann_model.keras"))
@@ -91,6 +73,9 @@ def preprocess_input(data: dict) -> np.ndarray:
     gender_map = enc.get("gender", {"F":0,"M":1})
     facid_map  = enc.get("facid",  {"A":0,"B":1,"C":2,"D":3,"E":4})
 
+    # FIX: clip glucose negatif ke 0
+    glucose_val = max(0.0, float(data.get("glucose", 141.96)))
+
     row = {
         "rcount":                    rcount_map.get(str(data.get("rcount", "0")), 0),
         "gender":                    gender_map.get(str(data.get("gender", "F")), 0),
@@ -105,15 +90,15 @@ def preprocess_input(data: dict) -> np.ndarray:
         "fibrosisandother":          int(data.get("fibrosisandother", 0)),
         "malnutrition":              int(data.get("malnutrition", 0)),
         "hemo":                      int(data.get("hemo", 0)),
-        "hematocrit":                float(data.get("hematocrit", 40.0)),
-        "neutrophils":               float(data.get("neutrophils", 60.0)),
-        "sodium":                    float(data.get("sodium", 138.0)),
-        "glucose":                   float(data.get("glucose", 100.0)),
-        "bloodureanitro":            float(data.get("bloodureanitro", 14.0)),
-        "creatinine":                float(data.get("creatinine", 1.0)),
-        "bmi":                       float(data.get("bmi", 25.0)),
-        "pulse":                     int(data.get("pulse", 80)),
-        "respiration":               float(data.get("respiration", 16.0)),
+        "hematocrit":                float(data.get("hematocrit", 11.98)),
+        "neutrophils":               float(data.get("neutrophils", 10.18)),
+        "sodium":                    float(data.get("sodium", 137.89)),
+        "glucose":                   glucose_val,
+        "bloodureanitro":            float(data.get("bloodureanitro", 14.10)),
+        "creatinine":                float(data.get("creatinine", 1.10)),
+        "bmi":                       float(data.get("bmi", 29.81)),
+        "pulse":                     int(data.get("pulse", 73)),
+        "respiration":               float(data.get("respiration", 6.49)),
         "secondarydiagnosisnonicd9": int(data.get("secondarydiagnosisnonicd9", 0)),
         "facid":                     facid_map.get(str(data.get("facid", "A")), 0),
     }
@@ -171,10 +156,13 @@ def predict_page():
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
     try:
-        data     = request.get_json()
-        X_scaled = preprocess_input(data)
+        data = request.get_json()
 
-        results = {}
+        # FIX: buang key _source dari JS agar tidak ganggu preprocessing
+        data.pop("_source", None)
+
+        X_scaled = preprocess_input(data)
+        results  = {}
 
         if "linear" in MODELS:
             pred = float(MODELS["linear"].predict(X_scaled)[0])
@@ -185,8 +173,9 @@ def api_predict():
             results["ann"] = max(1, round(pred))
 
         if "lstm" in MODELS:
-            window = MODELS.get("window", 1)
-            X_seq  = X_scaled.reshape(1, window, X_scaled.shape[1])
+            window = MODELS.get("window", 10)
+            # FIX: tile satu baris menjadi sliding window agar shape sesuai (1, window, n_features)
+            X_seq  = np.tile(X_scaled, (window, 1))[np.newaxis, :, :]
             pred   = float(MODELS["lstm"].predict(X_seq, verbose=0)[0][0])
             results["lstm"] = max(1, round(pred))
 
@@ -195,14 +184,17 @@ def api_predict():
             results["backprop"] = max(1, round(pred))
 
         if "kmeans" in MODELS:
-            cluster = int(MODELS["kmeans"].predict(X_scaled)[0])
-            cluster_map = {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"}
-            results["kmeans_cluster"] = cluster_map.get(cluster, f"Cluster {cluster}")
+            cluster   = int(MODELS["kmeans"].predict(X_scaled)[0])
+            # FIX: pakai label map yang diurutkan berdasarkan LOS aktual
+            label_map = MODELS.get("kmeans_label_map",
+                                   {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"})
+            results["kmeans_cluster"] = label_map.get(cluster, f"Cluster {cluster}")
 
         best_pred = results.get("lstm") or results.get("ann") or results.get("linear", 1)
         category  = get_category(best_pred)
-        confidence_low  = max(1, best_pred - 1)
-        confidence_high = best_pred + 1
+        # FIX: clamp confidence_high ke maksimum LOS dataset (17 hari)
+        confidence_low  = max(1,  best_pred - 1)
+        confidence_high = min(17, best_pred + 1)
 
         return jsonify({
             "status":          "ok",
@@ -238,6 +230,10 @@ def api_predict_csv():
         df["gender"] = df["gender"].astype(str).map(gender_map).fillna(0)
         df["facid"]  = df["facid"].astype(str).map(facid_map).fillna(0)
 
+        # FIX: clip glucose negatif di CSV juga
+        if "glucose" in df.columns:
+            df["glucose"] = df["glucose"].clip(lower=0)
+
         drop_cols = [c for c in ["eid","vdate","discharged","lengthofstay"] if c in df.columns]
         df = df.drop(columns=drop_cols)
 
@@ -250,9 +246,9 @@ def api_predict_csv():
 
         preds = []
         if "lstm" in MODELS:
-            window = MODELS.get("window", 1)
+            window = MODELS.get("window", 10)
             for row in X:
-                X_seq = row.reshape(1, window, len(row))
+                X_seq = np.tile(row, (window, 1))[np.newaxis, :, :]
                 p = float(MODELS["lstm"].predict(X_seq, verbose=0)[0][0])
                 preds.append(max(1, round(p)))
         elif "linear" in MODELS:
@@ -290,7 +286,8 @@ def api_sample():
                 "hematocrit":                 round(float(row["hematocrit"]), 2),
                 "neutrophils":                round(float(row["neutrophils"]), 2),
                 "sodium":                     round(float(row["sodium"]), 2),
-                "glucose":                    round(float(row["glucose"]), 2),
+                # FIX: clip glucose negatif dari sample data
+                "glucose":                    round(max(0.0, float(row["glucose"])), 2),
                 "bloodureanitro":             round(float(row["bloodureanitro"]), 2),
                 "creatinine":                 round(float(row["creatinine"]), 2),
                 "bmi":                        round(float(row["bmi"]), 2),
