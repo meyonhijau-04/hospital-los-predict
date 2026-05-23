@@ -5,8 +5,8 @@ pandas==2.2.2
 scikit-learn==1.5.0
 scipy==1.13.1
 threadpoolctl==3.5.0
-tensorflow-cpu==2.15.0
-keras==2.15.0
+tensorflow-cpu==2.16.1
+keras==3.14.1
 matplotlib==3.9.0
 seaborn==0.13.2
 joblib==1.4.2
