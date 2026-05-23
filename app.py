@@ -3,7 +3,7 @@ import io
 import numpy as np
 import pandas as pd
 import joblib
-import keras  
+from tensorflow import keras
 from flask import Flask, render_template, request, jsonify, send_file
 from backprop_model_class import BackpropNetwork
 
@@ -36,9 +36,8 @@ def load_models():
         else:
             models["kmeans_label_map"] = {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"}
 
-        import keras
-        models["ann"]  = keras.models.load_model(os.path.join(MODEL_DIR, "ann_model.h5"))
-        models["lstm"] = keras.models.load_model(os.path.join(MODEL_DIR, "lstm_model.h5"))
+        models["ann"]    = keras.models.load_model(os.path.join(MODEL_DIR, "ann_model.h5"))
+        models["lstm"]   = keras.models.load_model(os.path.join(MODEL_DIR, "lstm_model.h5"))
         models["window"] = joblib.load(os.path.join(MODEL_DIR, "lstm_window_size.pkl"))
 
         metrics["linear"]   = joblib.load(os.path.join(MODEL_DIR, "metrics_linear_regression.pkl"))
