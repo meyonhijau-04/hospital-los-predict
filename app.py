@@ -36,8 +36,8 @@ def load_models():
         else:
             models["kmeans_label_map"] = {0: "Rawat Singkat", 1: "Rawat Sedang", 2: "Rawat Lama"}
 
-        models["ann"]    = keras.models.load_model(os.path.join(MODEL_DIR, "ann_model.h5"))
-        models["lstm"]   = keras.models.load_model(os.path.join(MODEL_DIR, "lstm_model.h5"))
+        models["ann"]  = keras.models.load_model(os.path.join(MODEL_DIR, "ann_model.h5"), compile=False)
+        models["lstm"] = keras.models.load_model(os.path.join(MODEL_DIR, "lstm_model.h5"), compile=False)
         models["window"] = joblib.load(os.path.join(MODEL_DIR, "lstm_window_size.pkl"))
 
         metrics["linear"]   = joblib.load(os.path.join(MODEL_DIR, "metrics_linear_regression.pkl"))
